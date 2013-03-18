@@ -44,7 +44,6 @@ import org.ops4j.pax.swissbox.core.BundleClassLoader;
 import org.ops4j.pax.web.jsp.JspServletWrapper;
 import org.ops4j.pax.web.service.SharedWebContainerContext;
 import org.ops4j.pax.web.service.WebContainer;
-import org.ops4j.pax.web.service.internal.util.JspSupportUtils;
 import org.ops4j.pax.web.service.internal.util.SupportUtils;
 import org.ops4j.pax.web.service.spi.Configuration;
 import org.ops4j.pax.web.service.spi.ServerController;
@@ -76,228 +75,271 @@ class HttpServiceStarted implements StoppableHttpService {
 
 	private static final Logger LOG = LoggerFactory
 			.getLogger(HttpServiceStarted.class);
-
-	private final Bundle m_bundle;
-	private final ClassLoader m_bundleClassLoader;
-	private final ServerController m_serverController;
-
-	private final ServerModel m_serverModel;
-	private final ServiceModel m_serviceModel;
-	private final ServerListener m_serverListener;
-	private final ServletListener m_eventDispatcher;
-
 	private static SharedWebContainerContext sharedWebContainerContext;
+
+	private final Bundle serviceBundle;
+	private final ClassLoader bundleClassLoader;
+	private final ServerController serverController;
+
+	private final ServerModel serverModel;
+	private final ServiceModel serviceModel;
+	private final ServerListener serverListener;
+	private final ServletListener eventDispatcher;
 
 	static {
 		sharedWebContainerContext = new DefaultSharedWebContainerContext();
 	}
 
 	HttpServiceStarted(final Bundle bundle,
-			final ServerController serverController,
-			final ServerModel serverModel,
-			final ServletListener eventDispatcher) {
+			final ServerController srvController,
+			final ServerModel serverModel, final ServletListener eventDispatcher) {
 		LOG.debug("Creating http service for: " + bundle);
 
 		NullArgumentException.validateNotNull(bundle, "Bundle");
-		NullArgumentException.validateNotNull(serverController,
+		NullArgumentException.validateNotNull(srvController,
 				"Server controller");
 		NullArgumentException.validateNotNull(serverModel, "Service model");
 
-		m_bundle = bundle;
-		m_bundleClassLoader = new BundleClassLoader(bundle);
-		m_serverController = serverController;
-		m_serverModel = serverModel;
-		m_eventDispatcher = eventDispatcher;
-		m_serviceModel = new ServiceModel();
-		m_serverListener = new ServerListener() {
+		this.serviceBundle = bundle;
+		this.bundleClassLoader = new BundleClassLoader(bundle);
+		this.serverController = srvController;
+		this.serverModel = serverModel;
+		this.eventDispatcher = eventDispatcher;
+		this.serviceModel = new ServiceModel();
+		this.serverListener = new ServerListener() {
+			@Override
 			public void stateChanged(final ServerEvent event) {
 				LOG.debug("Handling event: [" + event + "]");
 
-				if (event == ServerEvent.STARTED) {// TODO: additional events
-													// might be needed here
-					for (ServletModel model : m_serviceModel.getServletModels()) {
-						servletEvent(ServletEvent.DEPLOYING, m_bundle, model);
-						m_serverController.addServlet(model);
-						servletEvent(ServletEvent.DEPLOYED, m_bundle, model);
+				if (event == ServerEvent.STARTED) {
+					for (ServletModel model : serviceModel.getServletModels()) {
+						servletEvent(ServletEvent.DEPLOYING, serviceBundle,
+								model);
+						serverController.addServlet(model);
+						servletEvent(ServletEvent.DEPLOYED, serviceBundle,
+								model);
 					}
-					for (EventListenerModel model : m_serviceModel
+					for (EventListenerModel model : serviceModel
 							.getEventListenerModels()) {
-						m_serverController.addEventListener(model);
+						serverController.addEventListener(model);
 					}
-					for (FilterModel filterModel : m_serviceModel
+					for (FilterModel filterModel : serviceModel
 							.getFilterModels()) {
-						m_serverController.addFilter(filterModel);
+						serverController.addFilter(filterModel);
 					}
-					for (ErrorPageModel model : m_serviceModel
+					for (ErrorPageModel model : serviceModel
 							.getErrorPageModels()) {
-						m_serverController.addErrorPage(model);
+						serverController.addErrorPage(model);
 					}
 				}
 			}
 		};
-		m_serverController.addListener(m_serverListener);
+		this.serverController.addListener(serverListener);
 	}
 
+	@Override
 	public void stop() {
-		for (ServletModel model : m_serviceModel.getServletModels()) {
-			servletEvent(ServletEvent.UNDEPLOYING, m_bundle, model);
-			m_serverModel.removeServletModel(model);
-			servletEvent(ServletEvent.UNDEPLOYED, m_bundle, model);
+		for (ServletModel model : serviceModel.getServletModels()) {
+			servletEvent(ServletEvent.UNDEPLOYING, serviceBundle, model);
+			serverModel.removeServletModel(model);
+			servletEvent(ServletEvent.UNDEPLOYED, serviceBundle, model);
 		}
-		for (FilterModel model : m_serviceModel.getFilterModels()) {
-			m_serverModel.removeFilterModel(model);
+		for (FilterModel model : serviceModel.getFilterModels()) {
+			serverModel.removeFilterModel(model);
 		}
-		for (ContextModel contextModel : m_serviceModel.getContextModels()) {
-			m_serverController.removeContext(contextModel.getHttpContext());
+		for (ContextModel contextModel : serviceModel.getContextModels()) {
+			serverController.removeContext(contextModel.getHttpContext());
 		}
-		m_serverModel.deassociateHttpContexts(m_bundle);
+		serverModel.deassociateHttpContexts(serviceBundle);
 	}
 
 	/**
-	 * From Http Service - cannot fix generics until underlying Http Service
-	 * is corrected
+	 * From Http Service - cannot fix generics until underlying Http Service is
+	 * corrected
 	 */
 	@Override
-    public void registerServlet(final String alias, final Servlet servlet,
-            @SuppressWarnings("rawtypes") final Dictionary initParams, final HttpContext httpContext)
-            throws ServletException, NamespaceException {
-        final ContextModel contextModel = getOrCreateContext(httpContext);
-        LOG.debug("Using context [" + contextModel + "]");
-        @SuppressWarnings("unchecked")
-		final ServletModel model = new ServletModel(contextModel, servlet, alias, (Dictionary<String,?>) initParams);
-        registerServlet(contextModel, model);
-    }
-    
-    private void servletEvent(int type, Bundle bundle, ServletModel model) {
-        m_eventDispatcher.servletEvent(new ServletEvent(type, bundle, model.getAlias(),
-                model.getName(), model.getUrlPatterns(), model.getServlet(), 
-                model.getServletClass(), model.getContextModel().getHttpContext()));
-    }
-    
-	private void registerServlet(ContextModel contextModel, ServletModel model) throws ServletException, NamespaceException {
-		servletEvent(ServletEvent.DEPLOYING, m_bundle, model);
+	public void registerServlet(final String alias, final Servlet servlet,
+			@SuppressWarnings("rawtypes") final Dictionary initParams,
+			final HttpContext httpContext) throws ServletException,
+			NamespaceException {
+		this.registerServlet(alias, servlet, initParams, null, null,
+				httpContext);
+	}
+
+	@Override
+	public void registerServlet(final String alias, final Servlet servlet,
+			@SuppressWarnings("rawtypes") final Dictionary initParams,
+			final Integer loadOnStartup, Boolean asyncSupported,
+			final HttpContext httpContext) throws ServletException,
+			NamespaceException {
+		final ContextModel contextModel = getOrCreateContext(httpContext);
+		LOG.debug("Using context [" + contextModel + "]");
+		@SuppressWarnings("unchecked")
+		final ServletModel model = new ServletModel(contextModel, servlet,
+				alias, initParams, loadOnStartup, asyncSupported);
+		registerServlet(contextModel, model);
+	}
+
+	private void servletEvent(int type, Bundle bundle, ServletModel model) {
+		eventDispatcher.servletEvent(new ServletEvent(type, bundle, model
+				.getAlias(), model.getName(), model.getUrlPatterns(), model
+				.getServlet(), model.getServletClass(), model.getContextModel()
+				.getHttpContext()));
+	}
+
+	private void registerServlet(ContextModel contextModel, ServletModel model)
+			throws ServletException, NamespaceException {
+		servletEvent(ServletEvent.DEPLOYING, serviceBundle, model);
 		boolean serverSuccess = false;
 		boolean serviceSuccess = false;
 		boolean controllerSuccess = false;
 		try {
-			m_serverModel.addServletModel(model);
+			serverModel.addServletModel(model);
 			serverSuccess = true;
-			m_serviceModel.addServletModel(model);
+			serviceModel.addServletModel(model);
 			serviceSuccess = true;
-			m_serverController.addServlet(model);
+			serverController.addServlet(model);
 			controllerSuccess = true;
-			if (model.getServlet() != null && !isWebAppWebContainerContext(contextModel)) {
-			    String contextPath = "/" + contextModel.getContextName();
-			    ServletContextManager.startContext(contextPath);
+			if (model.getServlet() != null
+					&& !isWebAppWebContainerContext(contextModel)) {
+				String contextPath = "/" + contextModel.getContextName();
+				ServletContextManager.startContext(contextPath);
 			}
 		} finally {
 			// as this compensatory actions to work the remove methods should
 			// not throw exceptions.
 			if (!controllerSuccess) {
 				if (serviceSuccess) {
-					m_serviceModel.removeServletModel(model);
+					serviceModel.removeServletModel(model);
 				}
 				if (serverSuccess) {
-					m_serverModel.removeServletModel(model);
+					serverModel.removeServletModel(model);
 				}
-				servletEvent(ServletEvent.FAILED, m_bundle, model);
+				servletEvent(ServletEvent.FAILED, serviceBundle, model);
 			} else {
-				servletEvent(ServletEvent.DEPLOYED, m_bundle, model);
+				servletEvent(ServletEvent.DEPLOYED, serviceBundle, model);
 			}
 		}
 	}
 
-    private boolean isWebAppWebContainerContext(ContextModel contextModel) {
-        return contextModel.getHttpContext().getClass().getName().equals("org.ops4j.pax.web.extender.war.internal.WebAppWebContainerContext");
-    }
+	private boolean isWebAppWebContainerContext(ContextModel contextModel) {
+		return contextModel
+				.getHttpContext()
+				.getClass()
+				.getName()
+				.equals("org.ops4j.pax.web.extender.war.internal.WebAppWebContainerContext");
+	}
 
+	@Override
 	public void registerResources(final String alias, final String name,
 			final HttpContext httpContext) throws NamespaceException {
 		final ContextModel contextModel = getOrCreateContext(httpContext);
-		LOG.debug("Using context [" + contextModel + "]");
-		final Servlet servlet = m_serverController.createResourceServlet(
+		LOG.debug("Registering resource using context [" + contextModel + "]");
+		final Servlet servlet = serverController.createResourceServlet(
 				contextModel, alias, name);
 		final ResourceModel model = new ResourceModel(contextModel, servlet,
 				alias, name);
-		servletEvent(ServletEvent.DEPLOYING, m_bundle, model);
+		servletEvent(ServletEvent.DEPLOYING, serviceBundle, model);
 		boolean serverSuccess = false;
 		boolean serviceSuccess = false;
 		boolean controllerSuccess = false;
 		try {
 			try {
-				m_serverModel.addServletModel(model);
+				serverModel.addServletModel(model);
 				serverSuccess = true;
 			} catch (ServletException e) {
 				// this should never happen as the servlet is created each time
 				// so it cannot already be registered
 			}
-			m_serviceModel.addServletModel(model);
+			serviceModel.addServletModel(model);
 			serviceSuccess = true;
-			m_serverController.addServlet(model);
+			serverController.addServlet(model);
 			controllerSuccess = true;
 		} finally {
 			// as this compensatory actions to work the remove methods should
 			// not throw exceptions.
 			if (!controllerSuccess) {
 				if (serviceSuccess) {
-					m_serviceModel.removeServletModel(model);
+					serviceModel.removeServletModel(model);
 				}
 				if (serverSuccess) {
-					m_serverModel.removeServletModel(model);
+					serverModel.removeServletModel(model);
 				}
-				servletEvent(ServletEvent.FAILED, m_bundle, model);
+				servletEvent(ServletEvent.FAILED, serviceBundle, model);
 			} else {
-				servletEvent(ServletEvent.DEPLOYED, m_bundle, model);
+				servletEvent(ServletEvent.DEPLOYED, serviceBundle, model);
 			}
 		}
 	}
 
+	@Override
 	public void unregister(final String alias) {
-		final ServletModel model = m_serviceModel
-				.getServletModelWithAlias(alias);
+		final ServletModel model = serviceModel.getServletModelWithAlias(alias);
 		if (model == null) {
 			throw new IllegalArgumentException("Alias [" + alias
 					+ "] was never registered");
 		}
-		servletEvent(ServletEvent.UNDEPLOYING, m_bundle, model);
-		m_serverModel.removeServletModel(model);
-		m_serviceModel.removeServletModel(model);
-		m_serverController.removeServlet(model);
-		servletEvent(ServletEvent.UNDEPLOYED, m_bundle, model);
+		servletEvent(ServletEvent.UNDEPLOYING, serviceBundle, model);
+		serverModel.removeServletModel(model);
+		serviceModel.removeServletModel(model);
+		serverController.removeServlet(model);
+		servletEvent(ServletEvent.UNDEPLOYED, serviceBundle, model);
 	}
 
+	@Override
 	public HttpContext createDefaultHttpContext() {
-		return new DefaultHttpContext(m_bundle);
+		return new DefaultHttpContext(serviceBundle);
 	}
 
 	/**
 	 * @see WebContainer#registerServlet(Servlet, String[], Dictionary,
 	 *      HttpContext)
 	 */
+	@Override
 	public void registerServlet(final Servlet servlet,
-			final String[] urlPatterns, final Dictionary<String,?> initParams,
+			final String[] urlPatterns, final Dictionary<String, ?> initParams,
 			final HttpContext httpContext) throws ServletException {
-		registerServlet(servlet, null, urlPatterns, initParams, httpContext);
+		registerServlet(servlet, null, urlPatterns, initParams, null, null,
+				httpContext);
+	}
+
+	@Override
+	public void registerServlet(Servlet servlet, String[] urlPatterns,
+			Dictionary<String, ?> initParams, Integer loadOnStartup,
+			Boolean asyncSupported, HttpContext httpContext)
+			throws ServletException {
+		registerServlet(servlet, null, urlPatterns, initParams, loadOnStartup,
+				asyncSupported, httpContext);
 	}
 
 	/**
 	 * @see WebContainer#registerServlet(javax.servlet.Servlet, String,
 	 *      String[],java.util.Dictionary,org.osgi.service.http.HttpContext)
 	 */
+	@Override
 	public void registerServlet(final Servlet servlet,
 			final String servletName, final String[] urlPatterns,
-			final Dictionary<String,?> initParams, final HttpContext httpContext)
-			throws ServletException {
+			final Dictionary<String, ?> initParams,
+			final HttpContext httpContext) throws ServletException {
+		registerServlet(servlet, servletName, urlPatterns, initParams, null,
+				null, httpContext);
+	}
+
+	@Override
+	public void registerServlet(Servlet servlet, String servletName,
+			String[] urlPatterns, Dictionary<String, ?> initParams,
+			Integer loadOnStartup, Boolean asyncSupported,
+			HttpContext httpContext) throws ServletException {
 		final ContextModel contextModel = getOrCreateContext(httpContext);
 		LOG.debug("Using context [" + contextModel + "]");
 		final ServletModel model = new ServletModel(contextModel, servlet,
 				servletName, urlPatterns, null, // no alias
-				initParams);
+				initParams, loadOnStartup, asyncSupported);
 		try {
-            registerServlet(contextModel, model);
-        } catch (NamespaceException ignore) {
-            // never thrown as model contains no alias
-        }
+			registerServlet(contextModel, model);
+		} catch (NamespaceException ignore) {
+			// never thrown as model contains no alias
+		}
 	}
 
 	/**
@@ -305,45 +347,54 @@ class HttpServiceStarted implements StoppableHttpService {
 	 */
 	@Override
 	public void unregisterServlet(final Servlet servlet) {
-		final ServletModel model = m_serviceModel.removeServlet(servlet);
+		final ServletModel model = serviceModel.removeServlet(servlet);
 		if (model != null) {
-			servletEvent(ServletEvent.UNDEPLOYING, m_bundle, model);
-			m_serverModel.removeServletModel(model);
-			m_serverController.removeServlet(model);
-			servletEvent(ServletEvent.UNDEPLOYED, m_bundle, model);
+			servletEvent(ServletEvent.UNDEPLOYING, serviceBundle, model);
+			serverModel.removeServletModel(model);
+			serverController.removeServlet(model);
+			servletEvent(ServletEvent.UNDEPLOYED, serviceBundle, model);
 		}
 	}
 
 	@Override
 	public void registerServlet(Class<? extends Servlet> servletClass,
-	        final String[] urlPatterns, final Dictionary<String,?> initParams, 
-	        final HttpContext httpContext)
-	        throws ServletException {
-        final ContextModel contextModel = getOrCreateContext(httpContext);
-        LOG.debug("Using context [" + contextModel + "]");
-        final ServletModel model = new ServletModel(contextModel, servletClass,
-                null, urlPatterns, null, // no name, no alias
-                initParams);
-        try {
-            registerServlet(contextModel, model);
-        } catch (NamespaceException ignore) {
-            // never thrown as model contains no alias
-        }
+			final String[] urlPatterns, final Dictionary<String, ?> initParams,
+			final HttpContext httpContext) throws ServletException {
+		this.registerServlet(servletClass, urlPatterns, initParams, null, null,
+				httpContext);
 	}
-	
+
+	@Override
+	public void registerServlet(Class<? extends Servlet> servletClass,
+			String[] urlPatterns, Dictionary<String, ?> initParams,
+			Integer loadOnStartup, Boolean asyncSupported,
+			HttpContext httpContext) throws ServletException {
+		final ContextModel contextModel = getOrCreateContext(httpContext);
+		LOG.debug("Using context [" + contextModel + "]");
+		final ServletModel model = new ServletModel(contextModel, servletClass,
+				null, urlPatterns, null, // no name, no alias
+				initParams, loadOnStartup, asyncSupported);
+		try {
+			registerServlet(contextModel, model);
+		} catch (NamespaceException ignore) {
+			// never thrown as model contains no alias
+		}
+	}
+
 	@Override
 	public void unregisterServlets(Class<? extends Servlet> servletClass) {
-        final Set<ServletModel> models = m_serviceModel.removeServletClass(servletClass);
-        if (models != null) {
-            for (ServletModel model : models) {
-                servletEvent(ServletEvent.UNDEPLOYING, m_bundle, model);
-                m_serverModel.removeServletModel(model);
-                m_serverController.removeServlet(model);
-                servletEvent(ServletEvent.UNDEPLOYED, m_bundle, model);
-            }
-        }
+		final Set<ServletModel> models = serviceModel
+				.removeServletClass(servletClass);
+		if (models != null) {
+			for (ServletModel model : models) {
+				servletEvent(ServletEvent.UNDEPLOYING, serviceBundle, model);
+				serverModel.removeServletModel(model);
+				serverController.removeServlet(model);
+				servletEvent(ServletEvent.UNDEPLOYED, serviceBundle, model);
+			}
+		}
 	}
-	
+
 	@Override
 	public void registerEventListener(final EventListener listener,
 			final HttpContext httpContext) {
@@ -354,16 +405,16 @@ class HttpServiceStarted implements StoppableHttpService {
 		boolean serviceSuccess = false;
 		boolean controllerSuccess = false;
 		try {
-			m_serviceModel.addEventListenerModel(model);
+			serviceModel.addEventListenerModel(model);
 			serviceSuccess = true;
-			m_serverController.addEventListener(model);
+			serverController.addEventListener(model);
 			controllerSuccess = true;
 		} finally {
 			// as this compensatory actions to work the remove methods should
 			// not throw exceptions.
 			if (!controllerSuccess) {
 				if (serviceSuccess) {
-					m_serviceModel.removeEventListener(listener);
+					serviceModel.removeEventListener(listener);
 				}
 			}
 		}
@@ -371,16 +422,17 @@ class HttpServiceStarted implements StoppableHttpService {
 
 	@Override
 	public void unregisterEventListener(final EventListener listener) {
-		final EventListenerModel model = m_serviceModel
+		final EventListenerModel model = serviceModel
 				.removeEventListener(listener);
 		if (model != null) {
-			m_serverController.removeEventListener(model);
+			serverController.removeEventListener(model);
 		}
 	}
 
 	@Override
 	public void registerFilter(final Filter filter, final String[] urlPatterns,
-			final String[] servletNames, final Dictionary<String,?> initParams,
+			final String[] servletNames,
+			final Dictionary<String, ?> initParams,
 			final HttpContext httpContext) {
 		final ContextModel contextModel = getOrCreateContext(httpContext);
 		LOG.debug("Using context [" + contextModel + "]");
@@ -390,21 +442,21 @@ class HttpServiceStarted implements StoppableHttpService {
 		boolean serviceSuccess = false;
 		boolean controllerSuccess = false;
 		try {
-			m_serverModel.addFilterModel(model);
+			serverModel.addFilterModel(model);
 			serverSuccess = true;
-			m_serviceModel.addFilterModel(model);
+			serviceModel.addFilterModel(model);
 			serviceSuccess = true;
-			m_serverController.addFilter(model);
+			serverController.addFilter(model);
 			controllerSuccess = true;
 		} finally {
 			// as this compensatory actions to work the remove methods should
 			// not throw exceptions.
 			if (!controllerSuccess) {
 				if (serviceSuccess) {
-					m_serviceModel.removeFilter(filter);
+					serviceModel.removeFilter(filter);
 				}
 				if (serverSuccess) {
-					m_serverModel.removeFilterModel(model);
+					serverModel.removeFilterModel(model);
 				}
 			}
 		}
@@ -412,10 +464,10 @@ class HttpServiceStarted implements StoppableHttpService {
 
 	@Override
 	public void unregisterFilter(final Filter filter) {
-		final FilterModel model = m_serviceModel.removeFilter(filter);
+		final FilterModel model = serviceModel.removeFilter(filter);
 		if (model != null) {
-			m_serverModel.removeFilterModel(model);
-			m_serverController.removeFilter(model);
+			serverModel.removeFilterModel(model);
+			serverController.removeFilter(model);
 		}
 	}
 
@@ -423,19 +475,19 @@ class HttpServiceStarted implements StoppableHttpService {
 	 * @see WebContainer#setContextParam(Dictionary, HttpContext)
 	 */
 	@Override
-	public void setContextParam(final Dictionary<String,?> params,
+	public void setContextParam(final Dictionary<String, ?> params,
 			final HttpContext httpContext) {
 		NullArgumentException.validateNotNull(httpContext, "Http context");
 		final ContextModel contextModel = getOrCreateContext(httpContext);
 		Map<String, String> contextParams = contextModel.getContextParams();
 		if (!contextParams.equals(params)) {
-		    if (!m_serviceModel.canBeConfigured(httpContext)) {
-	            throw new IllegalStateException(
-	                    "Http context already used. Context params can be set/changed only before first usage");
-	        }			
-	        contextModel.setContextParams(params);
+			if (!serviceModel.canBeConfigured(httpContext)) {
+				throw new IllegalStateException(
+						"Http context already used. Context params can be set/changed only before first usage");
+			}
+			contextModel.setContextParams(params);
 		}
-		m_serviceModel.addContextModel(contextModel);
+		serviceModel.addContextModel(contextModel);
 	}
 
 	@Override
@@ -444,14 +496,15 @@ class HttpServiceStarted implements StoppableHttpService {
 		NullArgumentException.validateNotNull(httpContext, "Http context");
 		final ContextModel contextModel = getOrCreateContext(httpContext);
 		Integer sessionTimeout = contextModel.getSessionTimeout();
-		if (!(minutes == sessionTimeout || minutes != null && minutes.equals(sessionTimeout))) {
-	        if (!m_serviceModel.canBeConfigured(httpContext)) {
-	            throw new IllegalStateException(
-	                    "Http context already used. Session timeout can be set/changed only before first usage");
-	        }
-	        contextModel.setSessionTimeout(minutes);
+		if (!(minutes == sessionTimeout || minutes != null
+				&& minutes.equals(sessionTimeout))) {
+			if (!serviceModel.canBeConfigured(httpContext)) {
+				throw new IllegalStateException(
+						"Http context already used. Session timeout can be set/changed only before first usage");
+			}
+			contextModel.setSessionTimeout(minutes);
 		}
-		m_serviceModel.addContextModel(contextModel);
+		serviceModel.addContextModel(contextModel);
 	}
 
 	/**
@@ -468,32 +521,36 @@ class HttpServiceStarted implements StoppableHttpService {
 	 */
 	@Override
 	public void registerJsps(final String[] urlPatterns,
-			final Dictionary<String,?> initParams,
+			final Dictionary<String, ?> initParams,
 			final HttpContext httpContext) {
 		registerJspServlet(urlPatterns, initParams, httpContext, null);
 	}
 
 	@Override
-	public void registerJspServlet(final String[] urlPatterns, final HttpContext httpContext, final String jspFile) {
+	public void registerJspServlet(final String[] urlPatterns,
+			final HttpContext httpContext, final String jspFile) {
 		registerJspServlet(urlPatterns, null, httpContext, jspFile);
 	}
-	
+
 	@Override
-	public void registerJspServlet(final String[] urlPatterns, Dictionary<String,?> initParams, final HttpContext httpContext, final String jspFile) {
+	public void registerJspServlet(final String[] urlPatterns,
+			Dictionary<String, ?> initParams, final HttpContext httpContext,
+			final String jspFile) {
 		if (!SupportUtils.isJSPAvailable()) {
 			throw new UnsupportedOperationException(
 					"Jsp support is not enabled. Is org.ops4j.pax.web.jsp bundle installed?");
 		}
-		final Servlet jspServlet = new JspServletWrapper(m_bundle, jspFile);
+		final Servlet jspServlet = new JspServletWrapper(serviceBundle, jspFile);
 		final ContextModel contextModel = getOrCreateContext(httpContext);
+		// CHECKSTYLE:SKIP
 		initParams = createInitParams(contextModel,
-				initParams == null ? new Hashtable<String, Object>() : initParams);
-		m_serviceModel.addContextModel(contextModel);
+				initParams == null ? new Hashtable<String, Object>()
+						: initParams);
+		serviceModel.addContextModel(contextModel);
 		try {
 			registerServlet(jspServlet, getJspServletName(jspFile),
 					urlPatterns == null ? new String[] { "*.jsp" }
-							: urlPatterns, initParams,
-					httpContext);
+							: urlPatterns, initParams, httpContext);
 		} catch (ServletException ignore) {
 			// this should never happen
 			LOG.error("Internal error. Please report.", ignore);
@@ -505,19 +562,22 @@ class HttpServiceStarted implements StoppableHttpService {
 	private String getJspServletName(String jspFile) {
 		return jspFile == null ? PAX_WEB_JSP_SERVLET : null;
 	}
-	
+
 	@SuppressWarnings("unchecked")
-	private Dictionary<String, ?> createInitParams(
-			ContextModel contextModel, Dictionary<String, ?> initParams) {
+	private Dictionary<String, ?> createInitParams(ContextModel contextModel,
+			Dictionary<String, ?> initParams) {
 		Queue<Configuration> configurations = new LinkedList<Configuration>();
-		Configuration serverControllerConfiguration = m_serverController.getConfiguration();
+		Configuration serverControllerConfiguration = serverController
+				.getConfiguration();
 		if (initParams != null) {
-			PropertyResolver propertyResolver = new DictionaryPropertyResolver(initParams);
-			Configuration configuration = new ConfigurationImpl(propertyResolver);
+			PropertyResolver propertyResolver = new DictionaryPropertyResolver(
+					initParams);
+			Configuration configuration = new ConfigurationImpl(
+					propertyResolver);
 			configurations.add(configuration);
 		}
-		configurations.add(serverControllerConfiguration); 
-		for (Configuration configuration : configurations) { 
+		configurations.add(serverControllerConfiguration);
+		for (Configuration configuration : configurations) {
 			String scratchDir = configuration.getJspScratchDir();
 			if (scratchDir == null) {
 				File temporaryDirectory = configuration.getTemporaryDirectory();
@@ -526,9 +586,10 @@ class HttpServiceStarted implements StoppableHttpService {
 				}
 			}
 			if (configuration.equals(serverControllerConfiguration)) {
-				//[PAXWEB-225] creates a bundle specific scratch dir
-				File tempDir = new File( scratchDir, contextModel.getContextName() );
-				if ( !tempDir.exists())	{
+				// [PAXWEB-225] creates a bundle specific scratch dir
+				File tempDir = new File(scratchDir,
+						contextModel.getContextName());
+				if (!tempDir.exists()) {
 					tempDir.mkdirs();
 				}
 				scratchDir = tempDir.toString();
@@ -542,7 +603,7 @@ class HttpServiceStarted implements StoppableHttpService {
 			String jspJavaEncoding = configuration.getJspJavaEncoding();
 			Boolean jspKeepgenerated = configuration.getJspKeepgenerated();
 			String jspLogVerbosityLevel = configuration
-				.getJspLogVerbosityLevel();
+					.getJspLogVerbosityLevel();
 			Boolean jspMappedfile = configuration.getJspMappedfile();
 			Integer jspTagpoolMaxSize = configuration.getJspTagpoolMaxSize();
 			Boolean jspPrecompilation = configuration.getJspPrecompilation();
@@ -561,18 +622,19 @@ class HttpServiceStarted implements StoppableHttpService {
 			params.put("scratchdir", scratchDir);
 			params.put("tagpoolMaxSize", jspTagpoolMaxSize);
 			params.put("usePrecompiled", jspPrecompilation);
-			
+
 			params.keySet().removeAll(Collections.list(initParams.keys()));
 			for (Map.Entry<String, Object> entry : params.entrySet()) {
 				Object param = entry.getValue();
 				if (param != null) {
 					String initParam = entry.getKey();
-					((Hashtable<String,Object>) initParams).put(initParam, param.toString());
+					((Hashtable<String, Object>) initParams).put(initParam,
+							param.toString());
 				}
 			}
-			
+
 		}
-		LOG.debug("JSP scratchdir: "+initParams.get("scratchdir"));
+		LOG.debug("JSP scratchdir: " + initParams.get("scratchdir"));
 		return initParams;
 	}
 
@@ -586,16 +648,15 @@ class HttpServiceStarted implements StoppableHttpService {
 					"Jsp support is not enabled. Is org.ops4j.pax.web.jsp bundle installed?");
 		}
 		NullArgumentException.validateNotNull(httpContext, "Http context");
-		final ContextModel contextModel = m_serviceModel
+		final ContextModel contextModel = serviceModel
 				.getContextModel(httpContext);
 		if (contextModel == null) {
 			throw new IllegalArgumentException(
 					"Jsp support is not enabled for http context ["
 							+ httpContext + "]");
 		}
-		for (Iterator<Servlet> jspServlets = 
-				contextModel.getJspServlets().keySet().iterator(); 
-				jspServlets.hasNext();) {
+		for (Iterator<Servlet> jspServlets = contextModel.getJspServlets()
+				.keySet().iterator(); jspServlets.hasNext();) {
 			Servlet jspServlet = jspServlets.next();
 			try {
 				unregisterServlet(jspServlet);
@@ -609,22 +670,22 @@ class HttpServiceStarted implements StoppableHttpService {
 	 * @see WebContainer#unregisterJsps(HttpContext)
 	 */
 	@Override
-	public void unregisterJsps(final String[] urlPatterns, final HttpContext httpContext) {
+	public void unregisterJsps(final String[] urlPatterns,
+			final HttpContext httpContext) {
 		if (!SupportUtils.isJSPAvailable()) {
 			throw new UnsupportedOperationException(
 					"Jsp support is not enabled. Is org.ops4j.pax.web.jsp bundle installed?");
 		}
 		NullArgumentException.validateNotNull(httpContext, "Http context");
-		final ContextModel contextModel = m_serviceModel
+		final ContextModel contextModel = serviceModel
 				.getContextModel(httpContext);
 		if (contextModel == null) {
 			throw new IllegalArgumentException(
 					"Jsp support is not enabled for http context ["
 							+ httpContext + "]");
 		}
-		for (Iterator<Map.Entry<Servlet, String[]>> jspServlets = 
-				contextModel.getJspServlets().entrySet().iterator();
-				jspServlets.hasNext();) {
+		for (Iterator<Map.Entry<Servlet, String[]>> jspServlets = contextModel
+				.getJspServlets().entrySet().iterator(); jspServlets.hasNext();) {
 			Map.Entry<Servlet, String[]> entry = jspServlets.next();
 			String[] candidateUrlPatterns = entry.getValue();
 			if (Arrays.equals(urlPatterns, candidateUrlPatterns)) {
@@ -636,7 +697,7 @@ class HttpServiceStarted implements StoppableHttpService {
 				}
 			}
 		}
-	}	
+	}
 
 	/**
 	 * @see WebContainer#registerErrorPage(String, String, HttpContext)
@@ -651,16 +712,16 @@ class HttpServiceStarted implements StoppableHttpService {
 		boolean serviceSuccess = false;
 		boolean controllerSuccess = false;
 		try {
-			m_serviceModel.addErrorPageModel(model);
+			serviceModel.addErrorPageModel(model);
 			serviceSuccess = true;
-			m_serverController.addErrorPage(model);
+			serverController.addErrorPage(model);
 			controllerSuccess = true;
 		} finally {
 			// as this compensatory actions to work the remove methods should
 			// not throw exceptions.
 			if (!controllerSuccess) {
 				if (serviceSuccess) {
-					m_serviceModel.removeErrorPage(error, contextModel);
+					serviceModel.removeErrorPage(error, contextModel);
 				}
 			}
 		}
@@ -673,10 +734,10 @@ class HttpServiceStarted implements StoppableHttpService {
 	public void unregisterErrorPage(final String error,
 			final HttpContext httpContext) {
 		NullArgumentException.validateNotNull(httpContext, "Http context");
-		final ErrorPageModel model = m_serviceModel.removeErrorPage(error,
-				m_serviceModel.getContextModel(httpContext));
+		final ErrorPageModel model = serviceModel.removeErrorPage(error,
+				serviceModel.getContextModel(httpContext));
 		if (model != null) {
-			m_serverController.removeErrorPage(model);
+			serverController.removeErrorPage(model);
 		}
 	}
 
@@ -686,7 +747,7 @@ class HttpServiceStarted implements StoppableHttpService {
 	@Override
 	public void registerWelcomeFiles(final String[] welcomeFiles,
 			final boolean redirect, final HttpContext httpContext) {
-		ContextModel contextModel = m_serviceModel.getContextModel(httpContext);
+		ContextModel contextModel = serviceModel.getContextModel(httpContext);
 		if (contextModel != null
 				&& contextModel.getWelcomeFilesFilter() != null) {
 			throw new IllegalStateException(
@@ -701,10 +762,10 @@ class HttpServiceStarted implements StoppableHttpService {
 					null, // no initParams
 					httpContext);
 			if (contextModel == null) {
-				contextModel = m_serviceModel.getContextModel(httpContext);
+				contextModel = serviceModel.getContextModel(httpContext);
 			}
 			contextModel.setWelcomeFilesFilter(welcomeFilesFilter);
-		} catch (Exception ignore) {
+		} catch (Exception ignore) { // CHECKSTYLE:SKIP
 			// this should never happen
 			LOG.error("Internal error. Please report.", ignore);
 		}
@@ -716,7 +777,7 @@ class HttpServiceStarted implements StoppableHttpService {
 	@Override
 	public void unregisterWelcomeFiles(final HttpContext httpContext) {
 		NullArgumentException.validateNotNull(httpContext, "Http context");
-		final ContextModel contextModel = m_serviceModel
+		final ContextModel contextModel = serviceModel
 				.getContextModel(httpContext);
 		if (contextModel == null
 				|| contextModel.getWelcomeFilesFilter() == null) {
@@ -740,25 +801,26 @@ class HttpServiceStarted implements StoppableHttpService {
 		String contextModelRealmName = contextModel.getRealmName();
 		String contextModelFormLoginPage = contextModel.getFormLoginPage();
 		String contextModelFormErrorPage = contextModel.getFormErrorPage();
-		if (!Arrays.asList(contextModelAuthMethod, contextModelRealmName, 
-		    contextModelFormLoginPage, contextModelFormErrorPage).equals(
-		    Arrays.asList(authMethod, realmName, formLoginPage, formErrorPage))) {
-	        if (!m_serviceModel.canBeConfigured(httpContext)) {
-	            throw new IllegalStateException(
-	                    "Http context already used. Session timeout can be set/changed only before first usage");
-	        }
-	        contextModel.setAuthMethod(authMethod);
-	        contextModel.setRealmName(realmName);
-	        contextModel.setFormLoginPage(formLoginPage);
-	        contextModel.setFormErrorPage(formErrorPage);
+		if (!Arrays.asList(contextModelAuthMethod, contextModelRealmName,
+				contextModelFormLoginPage, contextModelFormErrorPage).equals(
+				Arrays.asList(authMethod, realmName, formLoginPage,
+						formErrorPage))) {
+			if (!serviceModel.canBeConfigured(httpContext)) {
+				throw new IllegalStateException(
+						"Http context already used. Session timeout can be set/changed only before first usage");
+			}
+			contextModel.setAuthMethod(authMethod);
+			contextModel.setRealmName(realmName);
+			contextModel.setFormLoginPage(formLoginPage);
+			contextModel.setFormErrorPage(formErrorPage);
 		}
-		m_serviceModel.addContextModel(contextModel);
+		serviceModel.addContextModel(contextModel);
 	}
 
 	@Override
 	public void unregisterLoginConfig(final HttpContext httpContext) {
 		NullArgumentException.validateNotNull(httpContext, "Http context");
-		final ContextModel contextModel = m_serviceModel
+		final ContextModel contextModel = serviceModel
 				.getContextModel(httpContext);
 		if (contextModel == null || contextModel.getAuthMethod() == null
 				|| contextModel.getRealmName() == null) {
@@ -782,8 +844,8 @@ class HttpServiceStarted implements StoppableHttpService {
 		SecurityConstraintMappingModel secConstraintMapModel = new SecurityConstraintMappingModel(
 				contextModel, constraintName, mapping, url, dataConstraint,
 				authentication, roles);
-		m_serviceModel.addSecurityConstraintMappingModel(secConstraintMapModel);
-		m_serverController.addSecurityConstraintMapping(secConstraintMapModel);
+		serviceModel.addSecurityConstraintMappingModel(secConstraintMapModel);
+		serverController.addSecurityConstraintMapping(secConstraintMapModel);
 	}
 
 	@Override
@@ -802,42 +864,42 @@ class HttpServiceStarted implements StoppableHttpService {
 
 		Set<Class<?>> clazzes = new HashSet<Class<?>>();
 		if (classes != null) {
-		    for (Class<?> clazz : classes) {
-		        clazzes.add(clazz);
-		    }
+			for (Class<?> clazz : classes) {
+				clazzes.add(clazz);
+			}
 		}
-        Map<ServletContainerInitializer, Set<Class<?>>> containerInitializers = contextModel.getContainerInitializers();
-        Set<Class<?>> containerInitializersClasses = 
-            containerInitializers == null ? null : containerInitializers.get(servletContainerInitializer);
-        if (!clazzes.equals(containerInitializersClasses)) {
-            if (!m_serviceModel.canBeConfigured(httpContext)) {
-                throw new IllegalStateException(
-                        "Http context already used. ServletContainerInitializer can be set/changed only before first usage");
-            }
-            contextModel.addContainerInitializer(servletContainerInitializer,
-                    clazzes);
-        }
+		Map<ServletContainerInitializer, Set<Class<?>>> containerInitializers = contextModel
+				.getContainerInitializers();
+		Set<Class<?>> containerInitializersClasses = containerInitializers == null ? null
+				: containerInitializers.get(servletContainerInitializer);
+		if (!clazzes.equals(containerInitializersClasses)) {
+			if (!serviceModel.canBeConfigured(httpContext)) {
+				throw new IllegalStateException(
+						"Http context already used. ServletContainerInitializer can be set/changed only before first usage");
+			}
+			contextModel.addContainerInitializer(servletContainerInitializer,
+					clazzes);
+		}
 
-		m_serviceModel.addContextModel(contextModel);
+		serviceModel.addContextModel(contextModel);
 
 	}
-	
+
 	@Override
-	public void registerJettyWebXml(URL jettyWebXmlURL,
-			HttpContext httpContext) {
-		NullArgumentException.validateNotNull(httpContext, "Http context");		
+	public void registerJettyWebXml(URL jettyWebXmlURL, HttpContext httpContext) {
+		NullArgumentException.validateNotNull(httpContext, "Http context");
 		final ContextModel contextModel = getOrCreateContext(httpContext);
 		LOG.debug("Using context [" + contextModel + "]");
 		URL contextModelJettyWebXmlURL = contextModel.getJettyWebXmlURL();
-		if (!(contextModelJettyWebXmlURL == jettyWebXmlURL ||
-		    contextModelJettyWebXmlURL != null && contextModelJettyWebXmlURL.equals(jettyWebXmlURL))) {
-	        if (!m_serviceModel.canBeConfigured(httpContext)) {
-	            throw new IllegalStateException(
-	                    "Http context already used. ServletContainerInitializer can be set/changed only before first usage");
-	        }
-	        contextModel.setJettyWebXmlUrl(jettyWebXmlURL);
+		if (!(contextModelJettyWebXmlURL == jettyWebXmlURL || contextModelJettyWebXmlURL != null
+				&& contextModelJettyWebXmlURL.equals(jettyWebXmlURL))) {
+			if (!serviceModel.canBeConfigured(httpContext)) {
+				throw new IllegalStateException(
+						"Http context already used. ServletContainerInitializer can be set/changed only before first usage");
+			}
+			contextModel.setJettyWebXmlUrl(jettyWebXmlURL);
 		}
-		m_serviceModel.addContextModel(contextModel);
+		serviceModel.addContextModel(contextModel);
 
 	}
 
@@ -846,12 +908,12 @@ class HttpServiceStarted implements StoppableHttpService {
 		if (context == null) {
 			context = createDefaultHttpContext();
 		}
-		m_serverModel.associateHttpContext(context, m_bundle,
+		serverModel.associateHttpContext(context, serviceBundle,
 				httpContext instanceof SharedWebContainerContext);
-		ContextModel contextModel = m_serviceModel.getContextModel(context);
+		ContextModel contextModel = serviceModel.getContextModel(context);
 		if (contextModel == null) {
-			contextModel = new ContextModel(context, m_bundle,
-					m_bundleClassLoader);
+			contextModel = new ContextModel(context, serviceBundle,
+					bundleClassLoader);
 		}
 		return contextModel;
 	}
@@ -862,75 +924,81 @@ class HttpServiceStarted implements StoppableHttpService {
 	}
 
 	@Override
-	public void unregisterServletContainerInitializer(HttpContext m_httpContext) {
+	public void unregisterServletContainerInitializer(HttpContext httpContext) {
 		// TODO Auto-generated method stub
 
 	}
 
-    public void begin(HttpContext httpContext) {
-        final ContextModel contextModel = getOrCreateContext(httpContext);
-        LOG.debug("Using context [" + contextModel + "]");
-        try {
-            m_serverController.getContext( contextModel ).stop();
-        } catch (Exception e) {
-            if (e instanceof RuntimeException) {
-                throw (RuntimeException) e;
-            }
-            LOG.warn("Exception starting HttpContext registration");
-        }
-    }
-
-    public void end(HttpContext httpContext) {
-        final ContextModel contextModel = getOrCreateContext(httpContext);
-        LOG.debug("Using context [" + contextModel + "]");
-        try {
-            m_serverController.getContext( contextModel ).start();
-        } catch (Exception e) {
-            if (e instanceof RuntimeException) {
-                throw (RuntimeException) e;
-            }
-            LOG.warn("Exception finalizing HttpContext registration");
-        }
-    }
-
-    //Fix for PAXWEB-309
-	private interface ServletPlus extends Servlet {
-		public boolean isInitialized();
+	@Override
+	public void begin(HttpContext httpContext) {
+		final ContextModel contextModel = getOrCreateContext(httpContext);
+		LOG.debug("Using context [" + contextModel + "]");
+		try {
+			serverController.getContext(contextModel).stop();
+		} catch (Exception e) { // CHECKSTYLE:SKIP
+			if (e instanceof RuntimeException) {
+				throw (RuntimeException) e;
+			}
+			LOG.warn("Exception starting HttpContext registration");
+		}
 	}
 
 	@Override
-	public void setVirtualHosts(List<String> virtualHosts, HttpContext httpContext) {
+	public void end(HttpContext httpContext) {
+		final ContextModel contextModel = getOrCreateContext(httpContext);
+		LOG.debug("Using context [" + contextModel + "]");
+		try {
+			serverController.getContext(contextModel).start();
+		} catch (Exception e) { // CHECKSTYLE:SKIP
+			if (e instanceof RuntimeException) {
+				throw (RuntimeException) e;
+			}
+			LOG.warn("Exception finalizing HttpContext registration");
+		}
+	}
+
+	// Fix for PAXWEB-309
+	private interface ServletPlus extends Servlet {
+		boolean isInitialized();
+	}
+
+	@Override
+	public void setVirtualHosts(List<String> virtualHosts,
+			HttpContext httpContext) {
 		NullArgumentException.validateNotNull(httpContext, "Http context");
-		if (!m_serviceModel.canBeConfigured(httpContext)) {
+		if (!serviceModel.canBeConfigured(httpContext)) {
 			throw new IllegalStateException(
 					"Http context already used. ServletContainerInitializer can be set only before first usage");
 		}
-		
+
 		final ContextModel contextModel = getOrCreateContext(httpContext);
 		LOG.debug("Using context [" + contextModel + "]");
 		List<String> realVirtualHosts = virtualHosts;
 		if (realVirtualHosts.size() == 0) {
-			realVirtualHosts = this.m_serverController.getConfiguration().getVirtualHosts();
+			realVirtualHosts = this.serverController.getConfiguration()
+					.getVirtualHosts();
 		}
 		contextModel.setVirtualHosts(realVirtualHosts);
-		m_serviceModel.addContextModel(contextModel);	
+		serviceModel.addContextModel(contextModel);
 	}
 
 	@Override
 	public void setConnectors(List<String> connectors, HttpContext httpContext) {
 		NullArgumentException.validateNotNull(httpContext, "Http context");
-		if (!m_serviceModel.canBeConfigured(httpContext)) {
+		if (!serviceModel.canBeConfigured(httpContext)) {
 			throw new IllegalStateException(
 					"Http context already used. ServletContainerInitializer can be set only before first usage");
 		}
-		
+
 		final ContextModel contextModel = getOrCreateContext(httpContext);
 		LOG.debug("Using context [" + contextModel + "]");
 		List<String> realConnectors = connectors;
 		if (realConnectors.size() == 0) {
-			realConnectors = this.m_serverController.getConfiguration().getConnectors();
+			realConnectors = this.serverController.getConfiguration()
+					.getConnectors();
 		}
 		contextModel.setConnectors(realConnectors);
-		m_serviceModel.addContextModel(contextModel);		
+		serviceModel.addContextModel(contextModel);
 	}
+
 }
