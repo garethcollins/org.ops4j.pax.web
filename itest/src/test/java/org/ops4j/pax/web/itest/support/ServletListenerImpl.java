@@ -8,13 +8,16 @@ import org.slf4j.LoggerFactory;
 public class ServletListenerImpl implements ServletListener {
 	private static final Logger LOG = LoggerFactory.getLogger(ServletListenerImpl.class);
 	
-	private boolean event = false;
+	private boolean event;
 
 	@Override
-	public void servletEvent(ServletEvent event) {
-		LOG.info("Got event: " + event);
-		if (event.getType() == 2)
+	public void servletEvent(ServletEvent servletEvent) {
+		LOG.info("Got event: " + servletEvent);
+		if (servletEvent.getType() == ServletEvent.DEPLOYED) {
 			this.event = true;
+		} else if (servletEvent.getType() == ServletEvent.UNDEPLOYED) {
+			this.event = false;
+		}
 	}
 
 	public boolean gotEvent() {

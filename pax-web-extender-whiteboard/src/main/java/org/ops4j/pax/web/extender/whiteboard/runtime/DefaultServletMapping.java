@@ -19,168 +19,192 @@ package org.ops4j.pax.web.extender.whiteboard.runtime;
 
 import java.util.Arrays;
 import java.util.Map;
+
 import javax.servlet.Servlet;
+
 import org.ops4j.pax.web.extender.whiteboard.ServletMapping;
 
 /**
  * Default implementation of {@link ServletMapping}.
- *
+ * 
  * @author Alin Dreghiciu
  * @since 0.4.0, April 05, 2008
  */
-public class DefaultServletMapping
-    implements ServletMapping
-{
+public class DefaultServletMapping implements ServletMapping {
 
-    /**
-     * Http Context id.
-     */
-    private String m_httpContextId;
-    /**
-     * Servlet.
-     */
-    private Servlet m_servlet;
+	/**
+	 * Http Context id.
+	 */
+	private String httpContextId;
+	/**
+	 * Servlet.
+	 */
+	private Servlet servlet;
 
-    /**
-     * Servlet Name.
-     */
-    private String m_servletName;
+	/**
+	 * Servlet Name.
+	 */
+	private String servletName;
 
-    /**
-     * Alias.
-     */
-    private String m_alias;
-    /**
-     * Url patterns.
-     */
-    private String[] m_urlPatterns;
-    /**
-     * Initialization parameters.
-     */
-    private Map<String, String> m_initParams;
+	/**
+	 * Alias.
+	 */
+	private String alias;
+	/**
+	 * Url patterns.
+	 */
+	private String[] urlPatterns;
+	/**
+	 * Initialization parameters.
+	 */
+	private Map<String, String> initParams;
 
-    /**
-     * @see ServletMapping#getHttpContextId()
-     */
-    public String getHttpContextId()
-    {
-        return m_httpContextId;
-    }
+	private Integer loadOnStartup;
 
-    /**
-     * @see ServletMapping#getServlet()
-     */
-    public Servlet getServlet()
-    {
-        return m_servlet;
-    }
+	private Boolean asyncSupported;
 
-    /**
-     * @see ServletMapping#getServletName()
-     */
-    public String getServletName()
-    {
-        return m_servletName;
-    }
+	/**
+	 * @see ServletMapping#getHttpContextId()
+	 */
+	public String getHttpContextId() {
+		return httpContextId;
+	}
 
-    /**
-     * @see ServletMapping#getAlias()
-     */
-    public String getAlias()
-    {
-        return m_alias;
-    }
+	/**
+	 * @see ServletMapping#getServlet()
+	 */
+	public Servlet getServlet() {
+		return servlet;
+	}
 
-    /**
-     * @see ServletMapping#getUrlPatterns()
-     */
-    public String[] getUrlPatterns()
-    {
-        return m_urlPatterns;
-    }
+	/**
+	 * @see ServletMapping#getServletName()
+	 */
+	public String getServletName() {
+		return servletName;
+	}
 
-    /**
-     * @see ServletMapping#getInitParams()
-     */
-    public Map<String, String> getInitParams()
-    {
-        return m_initParams;
-    }
+	/**
+	 * @see ServletMapping#getAlias()
+	 */
+	public String getAlias() {
+		return alias;
+	}
 
-    /**
-     * Setter.
-     *
-     * @param httpContextId id of the http context this servlet belongs to
-     */
-    public void setHttpContextId( final String httpContextId )
-    {
-        m_httpContextId = httpContextId;
-    }
+	/**
+	 * @see ServletMapping#getUrlPatterns()
+	 */
+	public String[] getUrlPatterns() {
+		return urlPatterns;
+	}
 
-    /**
-     * Setter.
-     *
-     * @param servlet mapped servlet
-     */
-    public void setServlet( final Servlet servlet )
-    {
-        m_servlet = servlet;
-    }
+	/**
+	 * @see ServletMapping#getInitParams()
+	 */
+	public Map<String, String> getInitParams() {
+		return initParams;
+	}
 
-    /**
-     * Setter.
-     *
-     * @param Name of the Servlet being mapped.
-     */
-    public void setServletName( final String servletName )
-    {
-        m_servletName = servletName;
-    }
+	/**
+	 * Setter.
+	 * 
+	 * @param httpContextId
+	 *            id of the http context this servlet belongs to
+	 */
+	public void setHttpContextId(final String httpContextId) {
+		this.httpContextId = httpContextId;
+	}
 
-    /**
-     * Setter.
-     *
-     * @param alias alias this servlet maps to
-     */
-    public void setAlias( final String alias )
-    {
-        m_alias = alias;
-    }
+	/**
+	 * Setter.
+	 * 
+	 * @param servlet
+	 *            mapped servlet
+	 */
+	public void setServlet(final Servlet servlet) {
+		this.servlet = servlet;
+	}
 
-    /**
-     * Setter.
-     *
-     * @param urlPatterns array of url patterns
-     */
-    public void setUrlPatterns( final String... urlPatterns )
-    {
-        m_urlPatterns = urlPatterns;
-    }
+	/**
+	 * Setter.
+	 * 
+	 * @param Name
+	 *            of the Servlet being mapped.
+	 */
+	public void setServletName(final String servletName) {
+		this.servletName = servletName;
+	}
 
-    /**
-     * Seter.
-     *
-     * @param initParams map of initialization parameters
-     */
-    public void setInitParams( final Map<String, String> initParams )
-    {
-        m_initParams = initParams;
-    }
+	/**
+	 * Setter.
+	 * 
+	 * @param alias
+	 *            alias this servlet maps to
+	 */
+	public void setAlias(final String alias) {
+		this.alias = alias;
+	}
 
-    @Override
-    public String toString()
-    {
-        return new StringBuffer()
-            .append( this.getClass().getSimpleName() )
-            .append( "{" )
-            .append( "httpContextId=" ).append( m_httpContextId )
-            .append( ",urlPatterns=" ).append( Arrays.deepToString( m_urlPatterns ) )
-            .append( ",initParams=" ).append( m_initParams )
-            .append( ",servlet=" ).append( m_servlet )
-            .append( ", alias=").append( m_alias)
-            .append( ", servletName").append(m_servletName)
-            .append( "}" )
-            .toString();
-    }
+	/**
+	 * Setter.
+	 * 
+	 * @param urlPatterns
+	 *            array of url patterns
+	 */
+	public void setUrlPatterns(final String... urlPatterns) {
+		this.urlPatterns = urlPatterns;
+	}
+
+	/**
+	 * Seter.
+	 * 
+	 * @param initParams
+	 *            map of initialization parameters
+	 */
+	public void setInitParams(final Map<String, String> initParams) {
+		this.initParams = initParams;
+	}
+
+	/**
+	 * @return the loadOnStartup
+	 */
+	public Integer getLoadOnStartup() {
+		return loadOnStartup;
+	}
+
+	/**
+	 * @param loadOnStartup
+	 *            the loadOnStartup to set
+	 */
+	public void setLoadOnStartup(Integer loadOnStartup) {
+		this.loadOnStartup = loadOnStartup;
+	}
+
+	/**
+	 * @return the asyncSupported
+	 */
+	public Boolean getAsyncSupported() {
+		return asyncSupported;
+	}
+
+	/**
+	 * @param asyncSupported
+	 *            the asyncSupported to set
+	 */
+	public void setAsyncSupported(Boolean asyncSupported) {
+		this.asyncSupported = asyncSupported;
+	}
+
+	@Override
+	public String toString() {
+		return new StringBuffer().append(this.getClass().getSimpleName())
+				.append("{").append("httpContextId=").append(httpContextId)
+				.append(",urlPatterns=")
+				.append(Arrays.deepToString(urlPatterns))
+				.append(",initParams=").append(initParams).append(",servlet=")
+				.append(servlet).append(", alias=").append(alias)
+				.append(", servletName").append(servletName).append("}")
+				.toString();
+	}
 
 }

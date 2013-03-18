@@ -3,7 +3,6 @@
  */
 package org.ops4j.pax.web.extender.war.internal;
 
-import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -36,11 +35,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * @author achim
- *
+ * 
  */
+@SuppressWarnings("deprecation") //PackageAdmin is still used by xbean finder
 public class BundleServletScanner implements BundleScanner<String> {
-	
-	private static final Logger LOGGER = LoggerFactory.getLogger(BundleServletScanner.class);
+
+	private static final Logger LOG = LoggerFactory
+			.getLogger(BundleServletScanner.class);
 
 	private static final String OSGI_WIRING_PACKAGE_NAMESPACE = "osgi.wiring.package";
 
@@ -50,9 +51,9 @@ public class BundleServletScanner implements BundleScanner<String> {
 
 	private static final String JAVAX_SERVLET_NAMESPACE = "javax.servlet";
 
-	private static final Pattern PACKAGE_PATTERN_SERVLET = Pattern
-			.compile("(" + OSGI_WIRING_PACKAGE_NAMESPACE + "="
-					+ Pattern.quote(JAVAX_SERVLET_NAMESPACE) + ".*)");
+	private static final Pattern PACKAGE_PATTERN_SERVLET = Pattern.compile("("
+			+ OSGI_WIRING_PACKAGE_NAMESPACE + "="
+			+ Pattern.quote(JAVAX_SERVLET_NAMESPACE) + ".*)");
 
 	private final BundleContext bundleContext;
 
@@ -60,59 +61,71 @@ public class BundleServletScanner implements BundleScanner<String> {
 		this.bundleContext = bundleContext;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.ops4j.pax.swissbox.extender.BundleScanner#scan(org.osgi.framework.Bundle)
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see
+	 * org.ops4j.pax.swissbox.extender.BundleScanner#scan(org.osgi.framework
+	 * .Bundle)
 	 */
 	@Override
 	public List<String> scan(Bundle bundle) {
 		List<String> servletClasses = null;
-		if (ManifestUtil.getHeader(bundle, "Web-ContextPath", "Webapp-Context") != null && isImportingServlet(bundle) && !containsWebXML(bundle)) {
+		if (ManifestUtil.getHeader(bundle, "Web-ContextPath", "Webapp-Context") != null
+				&& isImportingServlet(bundle) && !containsWebXML(bundle)) {
 			servletClasses = new ArrayList<String>();
-			
-			LOGGER.debug("scanning for annotated classes");
-			
+
+			LOG.debug("scanning for annotated classes");
+
 			BundleAnnotationFinder baf = createBundleAnnotationFinder(bundle);
-			
-			Set<Class<?>> webServletClasses = new LinkedHashSet<Class<?>>(baf.findAnnotatedClasses(WebServlet.class));
-			Set<Class<?>> webFilterClasses = new LinkedHashSet<Class<?>>(baf.findAnnotatedClasses(WebFilter.class));
-			Set<Class<?>> webListenerClasses = new LinkedHashSet<Class<?>>(baf.findAnnotatedClasses(WebListener.class));
-			
+
+			Set<Class<?>> webServletClasses = new LinkedHashSet<Class<?>>(
+					baf.findAnnotatedClasses(WebServlet.class));
+			Set<Class<?>> webFilterClasses = new LinkedHashSet<Class<?>>(
+					baf.findAnnotatedClasses(WebFilter.class));
+			Set<Class<?>> webListenerClasses = new LinkedHashSet<Class<?>>(
+					baf.findAnnotatedClasses(WebListener.class));
+
 			for (Class<?> clazz : webListenerClasses) {
 				servletClasses.add(clazz.getSimpleName());
 			}
-			
+
 			for (Class<?> clazz : webFilterClasses) {
 				servletClasses.add(clazz.getSimpleName());
 			}
-			
+
 			for (Class<?> clazz : webServletClasses) {
 				servletClasses.add(clazz.getSimpleName());
 			}
-			
-			LOGGER.debug("class scanning done");
+
+			LOG.debug("class scanning done");
 		}
 		return servletClasses;
 	}
-	
+
 	private boolean containsWebXML(Bundle bundle) {
-		try {
-			Enumeration<URL> resources = bundle.getResources("web.xml");
-			if (resources == null)
-				return false;
-			return resources.hasMoreElements();
-		} catch (IOException e) {
+		LOG.debug("make sure the corresponding bundle doesn't contain a web.xml, bundle: {}", bundle);
+		Enumeration<URL> resources = bundle.findEntries("/","web.xml",true);
+		if (resources == null) {
+			LOG.debug("No resources of type web.xml found");
 			return false;
 		}
+		boolean hasMoreElements = resources.hasMoreElements();
+		LOG.debug("resources contains more elements? {}", hasMoreElements);
+		return hasMoreElements;
 	}
 
 	public boolean isImportingServlet(Bundle bundle) {
-		BundleWiring bundleWiring = (BundleWiring) bundle.adapt(BundleWiring.class);
-		// First check if there is a wiring to any package of org.apache.wicket
+		LOG.debug("check if the corresponding bundle imports javax.servlet api");
+		BundleWiring bundleWiring = (BundleWiring) bundle
+				.adapt(BundleWiring.class);
+		// First check if there is a wiring to any package of javax.servlet.api
 		List<BundleWire> importPackageWires = bundleWiring
 				.getRequiredWires(OSGI_WIRING_PACKAGE_NAMESPACE);
 		for (BundleWire bundleWire : importPackageWires) {
 			BundleRequirement requirement = bundleWire.getRequirement();
-			String filter = (String) requirement.getDirectives().get(FILTER_DIRECTIVE);
+			String filter = (String) requirement.getDirectives().get(
+					FILTER_DIRECTIVE);
 			if (filter != null) {
 				Matcher matcher = PACKAGE_PATTERN_SERVLET.matcher(filter);
 				if (matcher.find()) {
@@ -123,14 +136,14 @@ public class BundleServletScanner implements BundleScanner<String> {
 		List<BundleWire> requireBundleWires = bundleWiring
 				.getRequiredWires(OSGI_WIRING_BUNDLE_NAMESPACE);
 		if (!requireBundleWires.isEmpty()) {
-			// find all apache.wicket bundles and check if there are wirings...
+			// find all javax.servlet bundles and check if there are wirings...
 			Bundle[] bundles = bundleContext.getBundles();
 			for (Bundle bundleCheck : bundles) {
 				String symbolicName = bundleCheck.getSymbolicName();
 				if (symbolicName.startsWith(JAVAX_SERVLET_NAMESPACE)) {
 					Map<String, Object> map = new HashMap<String, Object>();
-			        map.put(OSGI_WIRING_BUNDLE_NAMESPACE, symbolicName);
-			        map.put("version", bundleCheck.getVersion());
+					map.put(OSGI_WIRING_BUNDLE_NAMESPACE, symbolicName);
+					map.put("version", bundleCheck.getVersion());
 					if (hasWireMatchingFilter(requireBundleWires, map)) {
 						return true;
 					}
@@ -144,7 +157,8 @@ public class BundleServletScanner implements BundleScanner<String> {
 			Map<String, ?> map) {
 		for (BundleWire bundleWire : wires) {
 			BundleRequirement requirement = bundleWire.getRequirement();
-			if (matchFilter((String)requirement.getDirectives().get(FILTER_DIRECTIVE),
+			if (matchFilter(
+					(String) requirement.getDirectives().get(FILTER_DIRECTIVE),
 					map)) {
 				return true;
 			}
@@ -162,33 +176,34 @@ public class BundleServletScanner implements BundleScanner<String> {
 			try {
 				Filter filter = bundleContext.createFilter(filterString);
 				if (filter.matches(map)) {
-					LOGGER.trace("filter = {} matches {}", map);
+					LOG.trace("filter = {} matches {}", map);
 					return true;
 				} else {
-					LOGGER.trace("filter = {} not matches {}",
-							map);
+					LOG.trace("filter = {} not matches {}", map);
 				}
 			} catch (InvalidSyntaxException e) {
-				LOGGER.warn("can't parse filter expression: {}", filterString);
+				LOG.warn("can't parse filter expression: {}", filterString);
 			}
 
 		}
 		return false;
 	}
-	
-	public static BundleAnnotationFinder createBundleAnnotationFinder(Bundle bundle) {
-		       ServiceReference<PackageAdmin> sr = bundle.getBundleContext().getServiceReference(PackageAdmin.class);
-		       PackageAdmin pa = bundle.getBundleContext().getService(sr);
-		       BundleAnnotationFinder baf = null;
-		       try {
-		           baf = new BundleAnnotationFinder(pa, bundle);
-		       } catch (Exception e) {
-		           LOGGER.warn("can't create BundleAnnotation finder");
-		           e.printStackTrace();
-		       }
-		
-		       bundle.getBundleContext().ungetService(sr);
-		       
-		       return baf;
-		   }
+
+	public static BundleAnnotationFinder createBundleAnnotationFinder(
+			Bundle bundle) {
+		ServiceReference<PackageAdmin> sr = bundle.getBundleContext()
+				.getServiceReference(PackageAdmin.class);
+		PackageAdmin pa = bundle.getBundleContext().getService(sr);
+		BundleAnnotationFinder baf = null;
+		try {
+			baf = new BundleAnnotationFinder(pa, bundle);
+		} catch (Exception e) { // CHECKSTYLE:SKIP
+			LOG.warn("can't create BundleAnnotation finder");
+			e.printStackTrace();
+		}
+
+		bundle.getBundleContext().ungetService(sr);
+
+		return baf;
+	}
 }
